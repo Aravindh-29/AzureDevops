@@ -1,0 +1,197 @@
+
+# Pipe line is collection of Stages
+
+---
+stages:
+  - stage: build
+    displayName: building code
+    jobs:
+      - job: docker build 
+        displayName: build docker image
+        pool:
+          vmImage: ubuntu-22.04
+        steps:
+          - task: Docker@2
+            inputs:
+              commad: build
+              Dockerfile: '**/Dockerfile'
+
+            
+---
+
+jobs:
+  - job: dotnetbuild
+    displayName: Dotnet Build
+    pool:
+      vmImage: ubuntu-22.04
+    steps:
+      - task: DotNetCoreCLI@2
+        inputs:
+          command: 'build'
+          projects: '**/*.sln'
+  - job: dockercompose
+    dependsOn: dotnetbuild
+    displayName: Docker compose build
+    pool:
+      vmImage: ubuntu-22.04
+    steps:
+      - task: DockerCompose@1
+        inputs:
+          containerregistrytype: 'Azure Container Registry'
+          dockerComposeFile: '**/docker-compose.yml'
+          action: Build services
+          projectName: 'DbConnectiontester'
+---          
+* Triggers:
+ 
+Triggers are used to control the pipeline execution
+ There are threee main Triggers
+    * Triggers
+    * pr (pull request)- when there is branch change or commit change in git
+    * Schedules - uses cron syntaxes, based on the schedule jobs will run
+
+* Artifact location
+  * 
+
+
+---
+pool:
+  vmImage: ubuntu-22.04
+trigger:
+  - main
+schedules:
+  - cron: '30 1 * * 6'
+    displayName: at 1:30 saturday
+    branches:
+      include:
+        - main
+parameters:
+  - name: jdkversion
+    displayName: Java version
+    type: string
+    default: '1.17'
+    values:
+      - '1.17'
+      - '1.11'
+      - '1.8'
+      - '1.10'
+      - '1.9'
+
+stages:
+  - stage: build
+    displayName: buildjavaproject
+    jobs:
+      - job: buildspc
+        displayName: buidspcproject
+        steps:
+          - task: Maven@4
+            inputs:
+              mavenPOMFile: 'pom.xml'
+              goals: 'clean package'
+              publishJUnitResults: true
+              testResultsFiles: '**/surefire-reports/TEST-*.xml'
+              javaHomeOption: 'JDKVersion'
+              jdkVersionOption: ${{parameters.jdkversion}}
+
+
+
+
+
+---
+
+
+pool:
+  vmImage: ubuntu-22.04
+trigger:
+  - main
+schedules:
+  - cron: '30 1 * * 6'
+    displayName: saturday at 1:30 am
+    branches:
+      include:
+        - main
+stages:
+  - stage: dotnetbuild
+    displayName: Dotnet Build
+    jobs:
+      - job: dotnetbuild
+        displayName: Dotnet Build
+        steps:
+          - task: DotNetCoreCLI@2
+            inputs:
+              command: 'build'
+              projects: '**/*.sln'
+  - stage: dockercompose
+    displayName: Docker Compose
+    jobs:
+      - job: dockercompose
+        displayName: Docker compose
+        steps:
+          - task: DockerCompose@1
+            inputs:
+              containerregistrytype: 'Azure Container Registry'
+              dockerComposeFile: '**/docker-compose.yml'
+              action: Build services
+              projectName: 'dbconnectiontester'
+
+---
+
+
+
+- java app buil and get .jar file as artifactory
+---
+
+
+pool:
+  vmImage: ubuntu-22.04
+variables:
+  DEFAULT_BRANCH: master
+trigger:
+  - "$(DEFAULT_BRANCH)"
+schedules:
+  - cron: '30 1 * * 6'
+    branches:
+      include:
+        - "$(DEFAULT_BRANCH)"
+parameters:
+  - name: jdkversion
+    type: string
+    default: '1.17'
+    values:
+      - 1.17
+      - 1.18
+      - 1.8
+      - 1.9
+
+stages:
+  - stage: javabuild
+    displayName: javabuild
+    jobs:
+      - job: buildgol
+        displayName: Build GOL
+        steps:
+          - task: Maven@4
+            inputs:
+              mavenPOMFile: 'pom.xml'
+              goals: 'clean package'
+              publishJUnitResults: true
+              testResultsFiles: '**/surefire-reports/TEST-*.xml'
+              javaHomeOption: 'JDKVersion'
+              jdkVersionOption: ${{parameters.jdkversion}}
+          - task: CopyFiles@2
+            inputs:
+              contents: '**/*.war'
+              targetFolder: '$(Build.ArtifactStagingDirectory)'
+          - task: PublishBuildArtifacts@1
+            inputs:
+              pathToPublish: '$(Build.ArtifactStagingDirectory)'
+              artifactName: GameOfLife
+
+---        
+* User defined variables are values which are re used in a pipeline
+* System variables are defined by Azure devops to use
+    * Build
+    * Agent
+    * System
+
+

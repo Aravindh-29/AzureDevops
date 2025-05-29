@@ -1,0 +1,19 @@
+stages:
+  - stage: ci
+    displayname: building code
+    jobs:
+      - job: string 
+        displayname: build image on docker
+        pool:
+          vmImage: Ubuntu-22.04
+        steps:
+          - task: Docker@2
+            inputs:
+              command: build
+              Dockerfile: '**/Dockerfile'
+
+
+---
+
+
+   
