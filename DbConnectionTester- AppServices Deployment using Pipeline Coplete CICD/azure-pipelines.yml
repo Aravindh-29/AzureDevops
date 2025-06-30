@@ -1,0 +1,100 @@
+trigger:
+  - main
+
+pool:
+  vmImage: "ubuntu-22.04"
+
+stages:
+  - stage: BuildStage
+    jobs:
+      - job: "BuildingJOB"
+        displayName: "Building .Net Application"
+        steps:
+          - task: DotNetCoreCLI@2
+            displayName: 'dotnet build'
+            inputs:
+              command: 'build'
+              projects: '**/*.sln'
+
+          - task: DotNetCoreCLI@2
+            displayName: 'dotnet publish'
+            inputs:
+             command: 'publish'
+             publishWebProjects: false
+             arguments: '-o $(Build.ArtifactStagingDirectory)/Output'
+             zipAfterPublish: true
+             modifyOutputPath: true
+
+          # 🔐 Security Scan Task
+          - task: MicrosoftSecurityDevOps@1
+            displayName: 'Run Security Scan'
+            inputs:
+              scanPath: '$(Build.SourcesDirectory)'
+
+          - task: PublishBuildArtifacts@1
+            inputs:
+              PathtoPublish: '$(Build.ArtifactStagingDirectory)/Output'
+              ArtifactName: 'DbAppOutputs'
+
+  - stage: DeployTODev
+    dependsOn: BuildStage
+    jobs:
+      - deployment: DeployWebApp
+        displayName: Deploy Web App
+        environment: 'Dev'
+        strategy:
+         runOnce:
+           deploy:
+             steps:
+               - download: current
+                 artifact: DbAppOutputs
+               - task: AzureWebApp@1
+                 displayName: 'Deploy to Dev App Service'
+                 inputs:
+                   azureSubscription: 'AppServiceCon'
+                   appName: 'DbConnectionTester'
+                   appType: 'webApp'
+                   package: '$(Pipeline.Workspace)/DbAppOutputs/*.zip'
+
+  - stage: DeployToStage
+    dependsOn: DeployTODev
+    jobs:
+      - deployment: DeployToStagingSlot
+        displayName: Deploy To Staging
+        environment: 'Staging'
+        strategy:
+         runOnce:
+           deploy:
+             steps:
+               - download: current
+                 artifact: DbAppOutputs
+               - task: AzureWebApp@1
+                 displayName: 'Deploy to Staging Slot'
+                 inputs:
+                   azureSubscription: 'AppServiceCon'
+                   appName: 'DbConnectionTester-Prod'
+                   appType: 'webApp'
+                   slotName: 'staging'
+                   deployToSlotOrASE: true
+                   resourceGroupName: 'Temp'
+                   package: '$(Pipeline.Workspace)/DbAppOutputs/*.zip'
+
+  - stage: DeployToProd
+    dependsOn: DeployToStage
+    jobs:
+      - deployment: DeploytoProd
+        displayName: Deploy to Production
+        environment: 'Prod'
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+               - task: AzureAppServiceManage@0
+                 displayName: 'Swap Staging to Production'
+                 inputs:
+                  azureSubscription: 'AppServiceCon'
+                  resourceGroupName: 'Temp'
+                  WebAppName: 'DbConnectionTester-Prod'
+                  SourceSlot: 'staging'
+                  TargetSlot: 'production'
+                  Action: 'Swap Slots'
