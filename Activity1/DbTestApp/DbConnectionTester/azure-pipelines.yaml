@@ -1,0 +1,44 @@
+---
+schedules:
+  - cron: '0 21 * * 1-5'
+    displayName: nightlyBuild
+    branches:
+      include:
+      - release
+stages:
+  - stage: Build
+    jobs:
+      - job: Build
+        pool:
+          vmImage: ubuntu-22.04
+        steps:
+          - task: DotNetCoreCLI@2
+            displayName: 'dotnet publish'
+            inputs:
+              command: 'publish'
+              publishWebProjects: false
+              projects: '**/*.csproj'
+              arguments: '-o $(Build.ArtifactStagingDirectory)/Output'
+              zipAfterPublish: true
+              modifyOutputPath: true
+          - task: PublishBuildArtifacts@1
+            inputs:
+              pathToPublish: $(Build.ArtifactStagingDirectory)
+              artifactName: DbAppOutputs
+  - stage: Deploy
+    dependsOn: Build
+    jobs:
+      - job: systemtest
+        displayName: systemtest environment
+        pool: Default
+        steps:
+          - task: DownloadBuildArtifacts@1
+            inputs:
+              buildType: 'current'
+              artifactName: DbAppOutputs
+              downloadPath: '$(System.ArtifactsDirectory)'
+          - bash: |
+              terraform init
+              terraform apply -var-file='dev.tfvars' -auto-approve
+            displayName: Terraform VM deployment
+            workingDirectory: DbConnectionTester/Terraform
